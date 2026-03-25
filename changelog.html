@@ -145,7 +145,6 @@
     <div class="header">
       <div class="header-left">
         <h1>Prolific Tracker</h1>
-        <p>Change log for this offline HTML tracker</p>
       </div>
       <div class="header-actions">
         <a class="link-btn" href="./index.html">← Back to tracker</a>
@@ -164,38 +163,11 @@
             <li>Fixed CSV import interpreting USD values as GBP (e.g. <code>$5</code> no longer shows as <code>£5</code>).</li>
             <li>Converted imported money into the internal GBP base before saving.</li>
             <li>Improved CSV column matching for reward/bonus headers that mention USD.</li>
-          </ul>
-        </div>
-
-        <div class="entry">
-          <div class="entry-top">
-            <div class="ver">v1.1 (2026-03-25)</div>
-            <div class="date">Goal + localStorage fixes</div>
-          </div>
-          <ul>
             <li>Added a small localStorage migration so existing weekly goal values display correctly after switching currencies.</li>
             <li>When toggling GBP/USD, the weekly goal input updates to show the correct numeric value for the selected currency.</li>
-          </ul>
-        </div>
-
-        <div class="entry">
-          <div class="entry-top">
-            <div class="ver">v1.2 (2026-03-25)</div>
-            <div class="date">Pagination + chart ranges</div>
-          </div>
-          <ul>
             <li>Paginated the studies table (Prev/Next) so long histories don’t push the charts too far down.</li>
             <li>Added chart range tabs: Daily (14 days), Monthly (12 months), and Yearly (last 5 years).</li>
-          </ul>
-        </div>
-
-        <div class="entry">
-          <div class="entry-top">
-            <div class="ver">v1.3 (2026-03-25)</div>
-            <div class="date">Multi-currency + projected earnings</div>
-          </div>
-          <ul>
-            <li>Replaced the GBP/USD toggle with a currency dropdown: GBP, USD, and SAR.</li>
+             <li>Replaced the GBP/USD toggle with a currency dropdown: GBP, USD, and SAR.</li>
             <li>Added an editable FX rate (1 GBP = X currency) stored in localStorage per currency.</li>
             <li>Total earned now shows approved earnings, with a projected total including pending (Awaiting Review) when present.</li>
           </ul>
