@@ -1470,7 +1470,7 @@ function parseCSV(text) {
     const name = idxName !== -1 ? (cols[idxName] || '').trim() || 'Unnamed study' : 'Study ' + i;
     const status = idxStatus !== -1 ? (cols[idxStatus] || 'APPROVED').trim().toUpperCase() : 'APPROVED';
 
-    const EXCLUDED_STATUSES = ['RETURNED', 'TIMED-OUT', 'SCREENED OUT', 'REJECTED'];
+    const EXCLUDED_STATUSES = ['RETURNED', 'TIMED-OUT', 'REJECTED'];
     if (EXCLUDED_STATUSES.includes(status)) { skipped++; continue; }
 
     const startRaw = idxStart !== -1 ? cols[idxStart]?.trim() : '';
