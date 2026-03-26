@@ -1493,38 +1493,67 @@ function parseCSV(text) {
     if (status === 'RETURNED') status = 'RETURNED';
     if (status === 'TIMED-OUT') status = 'TIMED-OUT';
     
-    // Calculate payment first so we can check if SCREENED OUT actually paid
-    const rewardPayGBP = parseMoneyToGBP(cols[idxReward] || '0');
-    const bonusPayGBP = idxBonus !== -1 ? parseMoneyToGBP(cols[idxBonus] || '0') : 0;
-    const totalPay = rewardPayGBP + bonusPayGBP;
-    
-    // Only exclude SCREENED OUT if they have ZERO payment
-    const EXCLUDED_STATUSES_NO_PAY = ['RETURNED', 'TIMED-OUT', 'REJECTED'];
-    
-    // For SCREENED OUT, only exclude if total pay is 0
-    if (status === 'SCREENED OUT' && totalPay === 0) {
-      skipped++;
-      continue;
-    }
-    
-    // For other excluded statuses, always exclude
-    if (EXCLUDED_STATUSES_NO_PAY.includes(status)) {
-      skipped++;
-      continue;
-    }
-
     const startRaw = idxStart !== -1 ? cols[idxStart]?.trim() : '';
     const fingerprint = name + '|' + (startRaw || '');
     if (!prolificId && existingFingerprints.has(fingerprint)) { skipped++; continue; }
-
+    
+    const rewardPayGBP = parseMoneyToGBP(cols[idxReward] || '0');
+    const bonusPayGBP = idxBonus !== -1 ? parseMoneyToGBP(cols[idxBonus] || '0') : 0;
+    
+    let pay = 0;
     let mins = 0;
     let dateStr = new Date().toISOString();
     const endRaw = idxEnd !== -1 ? cols[idxEnd]?.trim() : '';
     const start = startRaw ? new Date(startRaw) : null;
     const end = endRaw ? new Date(endRaw) : null;
     
+    // Check if this is a completed study (has end time)
+    const hasCompletion = end && !isNaN(end);
+    
+    // Determine payment based on status and completion
+    if (status === 'RETURNED' || status === 'TIMED-OUT') {
+      // Never count these
+      skipped++;
+      continue;
+    } 
+    else if (status === 'REJECTED') {
+      // Rejected studies typically pay nothing
+      skipped++;
+      continue;
+    }
+    else if (status === 'SCREENED OUT') {
+      // For screened out: only count the bonus if it exists
+      // The reward column is often the full study amount which they don't pay
+      if (bonusPayGBP > 0) {
+        pay = bonusPayGBP;
+      } else {
+        // No payment for this screened out study
+        skipped++;
+        continue;
+      }
+    }
+    else if (status === 'PARTIALLY APPROVED') {
+      // Partially approved: usually pay the full reward plus any bonus
+      pay = rewardPayGBP + bonusPayGBP;
+    }
+    else if (status === 'APPROVED' || status === 'AWAITING REVIEW') {
+      // Fully approved or awaiting: pay full reward plus any bonus
+      pay = rewardPayGBP + bonusPayGBP;
+    }
+    else {
+      // Unknown status - skip to be safe
+      skipped++;
+      continue;
+    }
+    
+    // Skip if no payment
+    if (pay === 0) {
+      skipped++;
+      continue;
+    }
+    
     // For date, prefer completed_at if available, otherwise started_at
-    if (end && !isNaN(end)) {
+    if (hasCompletion) {
       dateStr = end.toISOString();
     } else if (start && !isNaN(start)) {
       dateStr = start.toISOString();
@@ -1533,15 +1562,15 @@ function parseCSV(text) {
     // Calculate minutes - only if both start and end exist and end > start
     if (start && end && !isNaN(start) && !isNaN(end) && end > start) {
       mins = Math.round((end - start) / 60000);
-    } else if (status === 'APPROVED' || status === 'AWAITING REVIEW' || status === 'PARTIALLY APPROVED' || (status === 'SCREENED OUT' && totalPay > 0)) {
-      // For approved/awaiting/partially approved OR paid screened-out studies, default to 1 minute if no duration
+    } else {
+      // For studies without duration, default to 1 minute so they show in stats
       mins = 1;
     }
 
     const entry = { 
       id: Date.now() + i, 
       name, 
-      pay: totalPay, 
+      pay, 
       mins, 
       date: dateStr, 
       status, 
