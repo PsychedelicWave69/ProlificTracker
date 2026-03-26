@@ -338,6 +338,9 @@
   .import-toast.error { background: rgba(224,82,82,0.12); color: var(--red); border-color: rgba(224,82,82,0.25); }
 
   /* Manual add */
+  
+  .status-screened { background: rgba(245, 166, 35, 0.1); color: var(--amber); }
+  
   .add-card {
     background: var(--bg2);
     border: 0.5px solid var(--border);
@@ -1249,7 +1252,9 @@ function render() {
         const rateCls = rate >= goodRate() ? 'rate-good' : rate >= okRate() ? 'rate-ok' : 'rate-low';
         const dateStr = fmtDate(new Date(e.date));
         const status = e.status || 'APPROVED';
-        const statusCls = status === 'APPROVED' ? 'status-approved' : status === 'AWAITING REVIEW' ? 'status-awaiting' : 'status-rejected';
+        const statusCls = status === 'APPROVED' ? 'status-approved' : 
+                  status === 'AWAITING REVIEW' ? 'status-awaiting' : 
+                  status === 'SCREENED OUT' ? 'status-screened' : 'status-rejected';
         const statusLabel = status === 'AWAITING REVIEW' ? 'Awaiting' : status.charAt(0) + status.slice(1).toLowerCase();
         return `<tr>
           <td class="td-name" title="${e.name}">${e.name}</td>
@@ -1506,7 +1511,9 @@ function parseCSV(text) {
         mins = Math.round((end - start) / 60000);
       }
     }
-    if (mins < 1) mins = 1;
+    // Only default to 1 min if it's NOT a screen-out. 
+	// Screen-outs with no completion time should stay at 0 mins.
+	if (mins < 1 && status !== 'SCREENED OUT') mins = 1;
 
     const entry = { id: Date.now() + i, name, pay, mins, date: dateStr, status, source: 'csv', fingerprint };
     if (prolificId) entry.prolificId = prolificId;
