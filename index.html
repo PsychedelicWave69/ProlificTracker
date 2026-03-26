@@ -1468,7 +1468,6 @@ function parseCSV(text) {
   function parseMoneyToGBP(raw) {
     const s = (raw ?? '0').toString().trim();
     const hasUSD = s.includes('$');
-    const hasGBP = s.includes('£');
     const numberStr = s.replace(/[^0-9.\-]/g, '');
     const amount = parseFloat(numberStr);
     const safe = isNaN(amount) ? 0 : amount;
@@ -1494,21 +1493,29 @@ function parseCSV(text) {
     if (status === 'RETURNED') status = 'RETURNED';
     if (status === 'TIMED-OUT') status = 'TIMED-OUT';
     
-    // EXCLUDED STATUSES - these studies should NEVER be counted in earnings
-    const EXCLUDED_STATUSES = ['RETURNED', 'TIMED-OUT', 'REJECTED', 'SCREENED OUT'];
-    if (EXCLUDED_STATUSES.includes(status)) { 
-      skipped++; 
-      continue; 
+    // Calculate payment first so we can check if SCREENED OUT actually paid
+    const rewardPayGBP = parseMoneyToGBP(cols[idxReward] || '0');
+    const bonusPayGBP = idxBonus !== -1 ? parseMoneyToGBP(cols[idxBonus] || '0') : 0;
+    const totalPay = rewardPayGBP + bonusPayGBP;
+    
+    // Only exclude SCREENED OUT if they have ZERO payment
+    const EXCLUDED_STATUSES_NO_PAY = ['RETURNED', 'TIMED-OUT', 'REJECTED'];
+    
+    // For SCREENED OUT, only exclude if total pay is 0
+    if (status === 'SCREENED OUT' && totalPay === 0) {
+      skipped++;
+      continue;
+    }
+    
+    // For other excluded statuses, always exclude
+    if (EXCLUDED_STATUSES_NO_PAY.includes(status)) {
+      skipped++;
+      continue;
     }
 
     const startRaw = idxStart !== -1 ? cols[idxStart]?.trim() : '';
     const fingerprint = name + '|' + (startRaw || '');
     if (!prolificId && existingFingerprints.has(fingerprint)) { skipped++; continue; }
-
-    // For SCREENED OUT, we already skipped above, so we only get here for valid statuses
-    const rewardPayGBP = parseMoneyToGBP(cols[idxReward] || '0');
-    const bonusPayGBP = idxBonus !== -1 ? parseMoneyToGBP(cols[idxBonus] || '0') : 0;
-    const pay = rewardPayGBP + bonusPayGBP;
 
     let mins = 0;
     let dateStr = new Date().toISOString();
@@ -1526,16 +1533,15 @@ function parseCSV(text) {
     // Calculate minutes - only if both start and end exist and end > start
     if (start && end && !isNaN(start) && !isNaN(end) && end > start) {
       mins = Math.round((end - start) / 60000);
-    } else if (status === 'APPROVED' || status === 'AWAITING REVIEW' || status === 'PARTIALLY APPROVED') {
-      // For approved/awaiting studies without completion time, default to 1 minute
+    } else if (status === 'APPROVED' || status === 'AWAITING REVIEW' || status === 'PARTIALLY APPROVED' || (status === 'SCREENED OUT' && totalPay > 0)) {
+      // For approved/awaiting/partially approved OR paid screened-out studies, default to 1 minute if no duration
       mins = 1;
     }
-    // For other statuses that somehow got through, leave mins as 0
 
     const entry = { 
       id: Date.now() + i, 
       name, 
-      pay, 
+      pay: totalPay, 
       mins, 
       date: dateStr, 
       status, 
