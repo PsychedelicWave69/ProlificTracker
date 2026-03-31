@@ -77,47 +77,33 @@
     margin-top: 2px;
     font-family: var(--mono);
   }
-  .currency-toggle {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+  .currency-select {
     background: var(--bg2);
     border: 0.5px solid var(--border2);
     border-radius: 99px;
-    padding: 5px 12px;
-    cursor: pointer;
+    padding: 5px 28px 5px 14px;
     font-family: var(--mono);
     font-size: 12px;
-    color: var(--muted);
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
     transition: border-color 0.2s;
-    user-select: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a7d87'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
   }
-  .currency-toggle:hover { border-color: var(--accent); }
-  #currencyLabel, #currencyLabelR { font-weight: 500; transition: color 0.2s; }
-  #currencyLabel { color: var(--text); }
-  #currencyLabelR { color: var(--muted); }
-  .currency-toggle.usd #currencyLabel { color: var(--muted); }
-  .currency-toggle.usd #currencyLabelR { color: var(--text); }
-  .toggle-track {
-    width: 28px;
-    height: 15px;
-    background: var(--bg3);
-    border-radius: 99px;
-    border: 0.5px solid var(--border2);
-    position: relative;
-    flex-shrink: 0;
-    transition: background 0.2s;
+  .currency-select:hover, .currency-select:focus { border-color: var(--accent); }
+  .currency-select option { background: var(--bg2); color: var(--text); }
+  .rate-status {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--muted);
+    margin-left: 6px;
   }
-  .currency-toggle.usd .toggle-track { background: rgba(0,212,160,0.2); border-color: var(--accent); }
-  .toggle-thumb {
-    position: absolute;
-    top: 2px; left: 2px;
-    width: 9px; height: 9px;
-    background: var(--muted);
-    border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .currency-toggle.usd .toggle-thumb { transform: translateX(13px); background: var(--accent); }
+  .rate-status.live { color: var(--accent); }
+  .rate-status.stale { color: var(--amber); }
 
   /* Metric cards */
   .metrics {
@@ -718,13 +704,15 @@
 
 		</div>
 	</div>
-    <button class="currency-toggle" id="currencyToggle" onclick="toggleCurrency()">
-      <span id="currencyFlag">🇬🇧</span>
-      <span id="currencyLabel">GBP</span>
-      <span class="toggle-track"><span class="toggle-thumb" id="toggleThumb"></span></span>
-      <span id="currencyLabelR">USD</span>
-      <span id="currencyFlagR">🇺🇸</span>
-    </button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <select class="currency-select" id="currencySelect" onchange="setCurrency(this.value)">
+        <option value="GBP">🇬🇧 GBP</option>
+        <option value="USD">🇺🇸 USD</option>
+        <option value="EUR">🇪🇺 EUR</option>
+        <option value="SAR">🇸🇦 SAR</option>
+      </select>
+      <span class="rate-status" id="rateStatus">···</span>
+    </div>
   </div>
 
   <div class="metrics">
@@ -962,9 +950,41 @@
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 let entries = JSON.parse(localStorage.getItem('prolific_entries') || '[]');
-const GBP_TO_USD = 1.29;
+// Fallback rates used until live rates load
+const SYMBOLS  = { GBP: '£', USD: '$', EUR: '€', SAR: '﷼' };
+let RATES = { GBP: 1, USD: 1.29, EUR: 1.21, SAR: 4.84 };
+let ratesLoaded = false;
 
 let currency = localStorage.getItem('prolific_currency') || 'GBP';
+
+// Fetch live rates from frankfurter.app (free, no API key, updates daily)
+// Rates are cached in localStorage for 6 hours so we don't hammer the API
+async function loadRates() {
+  const CACHE_KEY  = 'prolific_rates';
+  const CACHE_TIME = 'prolific_rates_ts';
+  const SIX_HOURS  = 6 * 60 * 60 * 1000;
+  const statusEl   = document.getElementById('rateStatus');
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    const ts     = parseInt(localStorage.getItem(CACHE_TIME) || '0');
+    if (cached && Date.now() - ts < SIX_HOURS) {
+      RATES = JSON.parse(cached);
+      ratesLoaded = true;
+      if (statusEl) { statusEl.textContent = 'live'; statusEl.className = 'rate-status live'; }
+      render(); return;
+    }
+    const res  = await fetch('https://api.frankfurter.app/latest?base=GBP&symbols=USD,EUR,SAR');
+    const data = await res.json();
+    RATES = { GBP: 1, USD: data.rates.USD, EUR: data.rates.EUR, SAR: data.rates.SAR };
+    localStorage.setItem(CACHE_KEY,  JSON.stringify(RATES));
+    localStorage.setItem(CACHE_TIME, Date.now().toString());
+    ratesLoaded = true;
+    if (statusEl) { statusEl.textContent = 'live'; statusEl.className = 'rate-status live'; }
+    render();
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = 'offline'; statusEl.className = 'rate-status stale'; }
+  }
+}
 let weeklyGoalRaw = localStorage.getItem('prolific_goal');
 let weeklyGoal = parseFloat(weeklyGoalRaw || '60');
 let currentWeekOffset = 0;
@@ -1010,42 +1030,39 @@ function updateChartRangeUI() {
 // rather than always storing the internal base as GBP.
 const goalBaseFlag = localStorage.getItem('prolific_goal_base');
 if (!goalBaseFlag) {
-  if (currency === 'USD') weeklyGoal = weeklyGoal / GBP_TO_USD;
+  if (currency !== 'GBP') weeklyGoal = weeklyGoal / (RATES[currency] || 1);
   localStorage.setItem('prolific_goal_base', 'GBP');
 }
 
 // ─── Currency helpers ─────────────────────────────────────────────────────────
 function fmt(val) {
-  if (currency === 'USD') return '$' + (val * GBP_TO_USD).toFixed(2);
-  return '£' + val.toFixed(2);
+  return (SYMBOLS[currency] || '£') + (val * (RATES[currency] || 1)).toFixed(2);
 }
 function fmtRate(rate) {
-  if (currency === 'USD') return '$' + (rate * GBP_TO_USD).toFixed(2) + '/hr';
-  return '£' + rate.toFixed(2) + '/hr';
+  return (SYMBOLS[currency] || '£') + (rate * (RATES[currency] || 1)).toFixed(2) + '/hr';
 }
-function currSymbol() { return currency === 'USD' ? '$' : '£'; }
-function minRate() { return currency === 'USD' ? (6 * GBP_TO_USD).toFixed(2) : '6'; }
-function goodRate() { return currency === 'USD' ? 9 * GBP_TO_USD : 9; }
-function okRate()   { return currency === 'USD' ? 6 * GBP_TO_USD : 6; }
+function currSymbol() { return SYMBOLS[currency] || '£'; }
+function minRate()    { return (6 * (RATES[currency] || 1)).toFixed(2); }
+function goodRate()   { return 9 * (RATES[currency] || 1); }
+function okRate()     { return 6 * (RATES[currency] || 1); }
 
-function toggleCurrency() {
-  currency = currency === 'GBP' ? 'USD' : 'GBP';
+function setCurrency(val) {
+  currency = val;
   localStorage.setItem('prolific_currency', currency);
-  const btn = document.getElementById('currencyToggle');
-  btn.classList.toggle('usd', currency === 'USD');
   // Keep the numeric input aligned with the currently selected currency.
   const goalInput = document.getElementById('goalInput');
   if (goalInput) {
-    goalInput.value = (currency === 'USD' ? (weeklyGoal * GBP_TO_USD).toFixed(2) : weeklyGoal);
+    goalInput.value = (weeklyGoal * (RATES[currency] || 1)).toFixed(2);
   }
   render();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 // FIX: Initial Goal Display
-document.getElementById('goalInput').value = currency === 'USD' ? (weeklyGoal * GBP_TO_USD).toFixed(2) : weeklyGoal;
+document.getElementById('goalInput').value = (weeklyGoal * (RATES[currency] || 1)).toFixed(2);
 document.getElementById('studyDate').value = todayStr();
-if (currency === 'USD') document.getElementById('currencyToggle').classList.add('usd');
+document.getElementById('currencySelect').value = currency;
+loadRates();
 updateChartRangeUI();
 setupDragDrop();
 render();
@@ -1103,8 +1120,8 @@ function switchTab(tab, btn) {
 // FIX: updateGoal correctly handles conversion back to GBP base
 function updateGoal() {
   let val = parseFloat(document.getElementById('goalInput').value) || 60;
-  if (currency === 'USD') {
-    weeklyGoal = val / GBP_TO_USD;
+  if (currency !== 'GBP') {
+    weeklyGoal = val / (RATES[currency] || 1);
   } else {
     weeklyGoal = val;
   }
@@ -1290,7 +1307,7 @@ function render() {
 
 // ─── Chart ────────────────────────────────────────────────────────────────────
 function renderChart() {
-  const convert = raw => currency === 'USD' ? raw * GBP_TO_USD : raw;
+  const convert = raw => raw * (RATES[currency] || 1);
 
   let labels = [];
   let data = [];
@@ -1407,8 +1424,8 @@ function addManual() {
     return;
   }
   
-  if (currency === 'USD') {
-    pay = pay / GBP_TO_USD;
+  if (currency !== 'GBP') {
+    pay = pay / (RATES[currency] || 1);
   }
 
   entries.push({ id: Date.now(), name, pay, mins, date: new Date(date + 'T12:00:00').toISOString(), status: 'APPROVED', source: 'manual' });
@@ -1472,7 +1489,7 @@ function parseCSV(text) {
     const numberStr = s.replace(/[^0-9.\-]/g, '');
     const amount = parseFloat(numberStr);
     const safe = isNaN(amount) ? 0 : amount;
-    if (hasUSD) return safe / GBP_TO_USD;
+    if (hasUSD) return safe / (RATES['USD'] || 1.29);
     return safe; // assume GBP when no explicit USD marker is present
   }
 
@@ -1655,7 +1672,7 @@ function exportCSV() {
   const sym = currSymbol();
   const rows = [['Study name', 'Date', 'Pay (' + sym + ')', 'Duration (mins)', 'Hourly rate (' + sym + '/hr)', 'Status']];
   const list = getDisplayEntries();
-  const multiplier = currency === 'USD' ? GBP_TO_USD : 1;
+  const multiplier = RATES[currency] || 1;
   list.forEach(e => {
     const pay = (e.pay * multiplier).toFixed(2);
     const rate = e.mins > 0 ? (e.pay / (e.mins / 60) * multiplier).toFixed(2) : '';
