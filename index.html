@@ -108,7 +108,7 @@
   /* Metric cards */
   .metrics {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 1.5rem;
   }
@@ -342,7 +342,7 @@
     letter-spacing: 0.06em;
     margin-bottom: 10px;
   }
-  .add-row { display: grid; grid-template-columns: 1fr 90px 90px 120px auto; gap: 8px; align-items: end; }
+  .add-row { display: grid; grid-template-columns: 1fr 90px 90px 90px 120px auto; gap: 8px; align-items: end; }
   .field-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-family: var(--mono); }
   input[type="text"].field-input,
   input[type="number"].field-input,
@@ -584,7 +584,7 @@
     .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .add-row { grid-template-columns: 1fr 1fr; }
     .add-row > *:nth-child(1) { grid-column: span 2; }
-    .add-row > *:nth-child(5) { grid-column: span 2; }
+    .add-row > *:nth-child(6) { grid-column: span 2; }
     .add-btn { width: 100%; }
     .header { flex-direction: column; align-items: flex-start; gap: 10px; }
   }
@@ -722,6 +722,11 @@
       <div class="metric-sub" id="metricEarnedSub">this week</div>
     </div>
     <div class="metric">
+      <div class="metric-label">Total bonuses</div>
+      <div class="metric-value" style="color: var(--accent);" id="metricBonus">£0.00</div>
+      <div class="metric-sub" id="metricBonusSub">this week</div>
+    </div>
+    <div class="metric">
       <div class="metric-label">Time spent</div>
       <div class="metric-value" id="metricTime">2h 55m</div>
       <div class="metric-sub" id="metricTimeSub">this week</div>
@@ -787,6 +792,10 @@
       <div>
         <div class="field-label" id="payFieldLabel">Pay (£)</div>
         <input type="number" class="field-input" id="studyPay" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div>
+        <div class="field-label">Bonus (£)</div>
+        <input type="number" class="field-input" id="studyBonus" placeholder="0.00" min="0" step="0.01">
       </div>
       <div>
         <div class="field-label">Minutes</div>
@@ -950,6 +959,15 @@
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 let entries = JSON.parse(localStorage.getItem('prolific_entries') || '[]');
+
+// Migration: ensure all entries have a bonus field
+entries = entries.map(e => {
+  if (e.bonus === undefined) {
+    e.bonus = 0;
+  }
+  return e;
+});
+
 // Fallback rates used until live rates load
 const SYMBOLS  = { GBP: '£', USD: '$', EUR: '€', SAR: '﷼' };
 let RATES = { GBP: 1, USD: 1.29, EUR: 1.21, SAR: 4.84 };
@@ -1153,7 +1171,14 @@ function getDisplayEntries() {
   list = [...list].sort((a, b) => {
     let av = a[sortCol], bv = b[sortCol];
     if (sortCol === 'date') { av = new Date(av); bv = new Date(bv); }
-    if (sortCol === 'rate') { av = a.mins > 0 ? a.pay / (a.mins / 60) : 0; bv = b.mins > 0 ? b.pay / (b.mins / 60) : 0; }
+    if (sortCol === 'pay') { av = a.pay + (a.bonus || 0); bv = b.pay + (b.bonus || 0); }
+    if (sortCol === 'bonus') { av = a.bonus || 0; bv = b.bonus || 0; }
+    if (sortCol === 'rate') { 
+      const totalPayA = a.pay + (a.bonus || 0);
+      const totalPayB = b.pay + (b.bonus || 0);
+      av = a.mins > 0 ? totalPayA / (a.mins / 60) : 0; 
+      bv = b.mins > 0 ? totalPayB / (b.mins / 60) : 0; 
+    }
     return av < bv ? -sortDir : av > bv ? sortDir : 0;
   });
   return list;
@@ -1168,7 +1193,8 @@ function setSort(col) {
 // ─── Render ───────────────────────────────────────────────────────────────────
 function render() {
   const disp = getPeriodEntries();
-  const totalEarned = disp.reduce((s, e) => s + e.pay, 0);
+  const totalEarned = disp.reduce((s, e) => s + e.pay + (e.bonus || 0), 0);
+  const totalBonus = disp.reduce((s, e) => s + (e.bonus || 0), 0);
   const totalMins = disp.reduce((s, e) => s + e.mins, 0);
   const hours = totalMins / 60;
   const avgRate = hours > 0 ? totalEarned / hours : null;
@@ -1189,6 +1215,8 @@ function render() {
   const periodName = activeTab === 'all' ? 'all time' : activeTab === 'month' ? 'this month' : 'this week';
   document.getElementById('metricEarned').textContent = fmt(totalEarned);
   document.getElementById('metricEarnedSub').textContent = periodName;
+  document.getElementById('metricBonus').textContent = fmt(totalBonus);
+  document.getElementById('metricBonusSub').textContent = periodName;
   document.getElementById('metricTime').textContent =
     Math.floor(totalMins / 60) + 'h ' + (totalMins % 60) + 'm';
   document.getElementById('metricTimeSub').textContent = periodName;
@@ -1201,7 +1229,7 @@ function render() {
   const weNow = getWeekEnd(wsNow);
   const weekEarned = entries.filter(e => {
     const d = new Date(e.date); return d >= wsNow && d <= weNow;
-  }).reduce((s, e) => s + e.pay, 0);
+  }).reduce((s, e) => s + e.pay + (e.bonus || 0), 0);
   const pct = Math.min(100, (weekEarned / weeklyGoal) * 100);
   document.getElementById('progressFill').style.width = pct.toFixed(1) + '%';
   document.getElementById('progressFill').className = 'progress-fill' + (pct >= 100 ? ' over' : '');
@@ -1259,6 +1287,7 @@ function render() {
         <th class="${sortCol==='name'?'sorted':''}" onclick="setSort('name')">Study ${sortArrow('name')}</th>
         <th class="${sortCol==='date'?'sorted':''}" onclick="setSort('date')">Date ${sortArrow('date')}</th>
         <th class="${sortCol==='pay'?'sorted':''}" onclick="setSort('pay')">Pay ${sortArrow('pay')}</th>
+        <th class="${sortCol==='bonus'?'sorted':''}" onclick="setSort('bonus')">Bonus ${sortArrow('bonus')}</th>
         <th class="${sortCol==='mins'?'sorted':''}" onclick="setSort('mins')">Time ${sortArrow('mins')}</th>
         <th class="${sortCol==='rate'?'sorted':''}" onclick="setSort('rate')">Rate ${sortArrow('rate')}</th>
         <th>Status</th>
@@ -1266,7 +1295,8 @@ function render() {
       </tr></thead>
       <tbody>
       ${tableEntries.map(e => {
-        const rate = e.mins > 0 ? e.pay / (e.mins / 60) : 0;
+        const totalPay = e.pay + (e.bonus || 0);
+        const rate = e.mins > 0 ? totalPay / (e.mins / 60) : 0;
         const rateCls = rate >= goodRate() ? 'rate-good' : rate >= okRate() ? 'rate-ok' : 'rate-low';
         const dateStr = fmtDate(new Date(e.date));
         const status = e.status || 'APPROVED';
@@ -1274,10 +1304,13 @@ function render() {
                   status === 'AWAITING REVIEW' ? 'status-awaiting' : 
                   status === 'SCREENED OUT' ? 'status-screened' : 'status-rejected';
         const statusLabel = status === 'AWAITING REVIEW' ? 'Awaiting' : status.charAt(0) + status.slice(1).toLowerCase();
+        const bonus = e.bonus || 0;
+        const bonusDisplay = bonus > 0 ? fmt(bonus) : '—';
         return `<tr>
           <td class="td-name" title="${e.name}">${e.name}</td>
           <td class="td-date">${dateStr}</td>
           <td class="td-pay">${fmt(e.pay)}</td>
+          <td class="td-pay" style="color: var(--accent);">${bonusDisplay}</td>
           <td class="td-time">${e.mins}m</td>
           <td><span class="rate-badge ${rateCls}">${fmtRate(rate)}</span></td>
           <td><span class="status-badge ${statusCls}">${statusLabel}</span></td>
@@ -1324,7 +1357,7 @@ function renderChart() {
           const ed = new Date(e.date);
           return ed >= start && ed < end;
         })
-        .reduce((s, e) => s + e.pay, 0);
+        .reduce((s, e) => s + e.pay + (e.bonus || 0), 0);
       data.push(convert(raw));
     }
   } else if (chartRange === '5y') {
@@ -1339,7 +1372,7 @@ function renderChart() {
           const ed = new Date(e.date);
           return ed >= start && ed < end;
         })
-        .reduce((s, e) => s + e.pay, 0);
+        .reduce((s, e) => s + e.pay + (e.bonus || 0), 0);
       data.push(convert(raw));
     }
   } else {
@@ -1359,7 +1392,7 @@ function renderChart() {
           const ed = new Date(e.date);
           return ed >= d && ed < next;
         })
-        .reduce((s, e) => s + e.pay, 0);
+        .reduce((s, e) => s + e.pay + (e.bonus || 0), 0);
       return convert(raw);
     });
   }
@@ -1417,6 +1450,7 @@ function renderChart() {
 function addManual() {
   const name = document.getElementById('studyName').value.trim() || 'Unnamed study';
   let pay = parseFloat(document.getElementById('studyPay').value);
+  let bonus = parseFloat(document.getElementById('studyBonus').value) || 0;
   const mins = parseInt(document.getElementById('studyMins').value);
   const date = document.getElementById('studyDate').value;
   if (isNaN(pay) || isNaN(mins) || mins < 1 || pay < 0 || !date) {
@@ -1426,12 +1460,14 @@ function addManual() {
   
   if (currency !== 'GBP') {
     pay = pay / (RATES[currency] || 1);
+    bonus = bonus / (RATES[currency] || 1);
   }
 
-  entries.push({ id: Date.now(), name, pay, mins, date: new Date(date + 'T12:00:00').toISOString(), status: 'APPROVED', source: 'manual' });
+  entries.push({ id: Date.now(), name, pay, bonus, mins, date: new Date(date + 'T12:00:00').toISOString(), status: 'APPROVED', source: 'manual' });
   save();
   document.getElementById('studyName').value = '';
   document.getElementById('studyPay').value = '';
+  document.getElementById('studyBonus').value = '';
   document.getElementById('studyMins').value = '';
   render();
 }
@@ -1543,7 +1579,7 @@ function parseCSV(text) {
       // For screened out: only count the bonus if it exists
       // The reward column is often the full study amount which they don't pay
       if (bonusPayGBP > 0) {
-        pay = bonusPayGBP;
+        pay = 0; // No base reward for screened out
       } else {
         // No payment for this screened out study
         skipped++;
@@ -1552,11 +1588,11 @@ function parseCSV(text) {
     }
     else if (status === 'PARTIALLY APPROVED') {
       // Partially approved: usually pay the full reward plus any bonus
-      pay = rewardPayGBP + bonusPayGBP;
+      pay = rewardPayGBP;
     }
     else if (status === 'APPROVED' || status === 'AWAITING REVIEW') {
       // Fully approved or awaiting: pay full reward plus any bonus
-      pay = rewardPayGBP + bonusPayGBP;
+      pay = rewardPayGBP;
     }
     else {
       // Unknown status - skip to be safe
@@ -1564,8 +1600,8 @@ function parseCSV(text) {
       continue;
     }
     
-    // Skip if no payment
-    if (pay === 0) {
+    // Skip if no payment (neither reward nor bonus)
+    if (pay === 0 && bonusPayGBP === 0) {
       skipped++;
       continue;
     }
@@ -1589,6 +1625,7 @@ function parseCSV(text) {
       id: Date.now() + i, 
       name, 
       pay, 
+      bonus: bonusPayGBP,
       mins, 
       date: dateStr, 
       status, 
@@ -1670,13 +1707,15 @@ function setupDragDrop() {
 // ─── Export CSV ───────────────────────────────────────────────────────────────
 function exportCSV() {
   const sym = currSymbol();
-  const rows = [['Study name', 'Date', 'Pay (' + sym + ')', 'Duration (mins)', 'Hourly rate (' + sym + '/hr)', 'Status']];
+  const rows = [['Study name', 'Date', 'Pay (' + sym + ')', 'Bonus (' + sym + ')', 'Duration (mins)', 'Hourly rate (' + sym + '/hr)', 'Status']];
   const list = getDisplayEntries();
   const multiplier = RATES[currency] || 1;
   list.forEach(e => {
-    const pay = (e.pay * multiplier).toFixed(2);
-    const rate = e.mins > 0 ? (e.pay / (e.mins / 60) * multiplier).toFixed(2) : '';
-    rows.push(['"' + e.name.replace(/"/g, '""') + '"', new Date(e.date).toLocaleDateString('en-GB'), pay, e.mins, rate, e.status || 'APPROVED']);
+    const bonus = (e.bonus || 0) * multiplier;
+    const baseReward = e.pay * multiplier;
+    const totalPay = (e.pay + (e.bonus || 0)) * multiplier;
+    const rate = e.mins > 0 ? (totalPay / (e.mins / 60)).toFixed(2) : '';
+    rows.push(['"' + e.name.replace(/"/g, '""') + '"', new Date(e.date).toLocaleDateString('en-GB'), baseReward.toFixed(2), bonus.toFixed(2), e.mins, rate, e.status || 'APPROVED']);
   });
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
